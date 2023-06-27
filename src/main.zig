@@ -1,2 +1,1 @@
-const std = @import("std");
-const network = @import("network");
+const server = @import("server");
