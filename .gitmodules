@@ -1,0 +1,3 @@
+[submodule "zig-network"]
+	path = zig-network
+	url = https://github.com/kamkow1/zig-network.git
