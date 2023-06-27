@@ -2,30 +2,63 @@ const network = @import("network");
 const page_allocator = @import("std").heap.page_allocator;
 const print = @import("std").debug.print;
 
-pub const Server = struct {
-    port: u16,
-
-    pub fn start(self: *Server) !void {
-        try network.init();
-        defer network.deinit();
-
-        var socket = try network.Socket.create(.ipv4, .tcp);
-        defer socket.close();
-        try socket.bindToPort(self.port);
-
-        try socket.listen();
-        while (true) {
-            var client = try socket.accept();
-            defer client.close();
-            print("Client connected from {}\n", .{try client.getLocalEndPoint()});
-        }
-    }
+pub const Route = struct {
+    path: []const u8,
+    handler: *const fn () void,
 };
 
+pub fn Server(comptime port: u16) type {
+    return struct {
+        socket: ?network.Socket,
+        routes: []Route,
+
+        const Self = @This();
+
+        fn closeServer(self: *Self) void {
+            self.socket.?.close();
+            network.deinit();
+        }
+
+        pub fn start(self: *Self) !void {
+            try network.init();
+            defer network.deinit();
+
+            self.socket = try network.Socket.create(.ipv4, .tcp);
+            defer self.socket.?.close();
+            try self.socket.?.bindToPort(port);
+
+            try self.socket.?.listen();
+            while (true) {
+                var client = try self.socket.?.accept();
+                defer client.close();
+                const endpoint = try client.getLocalEndPoint();
+                print("Client connected from {d}\n", .{endpoint});
+
+                var buffer: [1024]u8 = undefined;
+                const len = try client.receive(&buffer);
+                _ = len;
+                print("Client said {s}", .{buffer});
+            }
+        }
+
+        pub fn init(routes: []Route) Self {
+            return Self{
+                .socket = null,
+                .routes = routes,
+            };
+        }
+    };
+}
+
+fn homeHandler() void {
+    print("HOME HANDLER\n", .{});
+}
+
 test "Start the server" {
-    var server = Server{
-        .port = 8000,
+    var routes = [_]Route{
+        .{ .path = "/home", .handler = homeHandler },
     };
 
+    var server = Server(8000).init(&routes);
     try server.start();
 }
