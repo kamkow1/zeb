@@ -1,6 +1,9 @@
 const network = @import("network");
-const page_allocator = @import("std").heap.page_allocator;
 const print = @import("std").debug.print;
+const HttpParser = @import("http.zig").HttpParser;
+const eql = @import("std").mem.eql;
+const ArenaAllocator = @import("std").heap.ArenaAllocator;
+const page_allocator = @import("std").heap.page_allocator;
 
 pub const Route = struct {
     path: []const u8,
@@ -35,9 +38,20 @@ pub fn Server(comptime port: u16) type {
                 print("Client connected from {d}\n", .{endpoint});
 
                 var buffer: [1024]u8 = undefined;
-                const len = try client.receive(&buffer);
-                _ = len;
-                print("Client said {s}", .{buffer});
+                _ = try client.receive(&buffer);
+
+                var arena = ArenaAllocator.init(page_allocator);
+                defer arena.deinit();
+                const arenaAllocator = arena.allocator();
+                var httpParser = HttpParser.init(arenaAllocator, &buffer);
+                const http_info = try httpParser.parse();
+                for (self.routes) |route| {
+                    // found matching route
+                    if (eql(u8, route.path, http_info.route)) {
+                        // call the handler
+                        route.handler();
+                    }
+                }
             }
         }
 
@@ -54,7 +68,7 @@ fn homeHandler() void {
     print("HOME HANDLER\n", .{});
 }
 
-test "Start the server" {
+test {
     var routes = [_]Route{
         .{ .path = "/home", .handler = homeHandler },
     };

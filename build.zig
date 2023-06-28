@@ -11,9 +11,9 @@ pub fn build(b: *std.build.Builder) void {
 
     // server tests
     const server_tests = b.addTest("src/server.zig");
-    server_tests.linkSystemLibrary("c");
     server_tests.addPackagePath("network", "zig-network/network.zig");
     server_tests.setBuildMode(mode);
-    const test_step = b.step("test", "Run src/server.zig tests");
+
+    const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&server_tests.step);
 }
