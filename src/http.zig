@@ -11,8 +11,8 @@ pub const HttpMethod = enum {
     HttpMethodGet,
 };
 
-pub const HttpMethodError = error{
-    UnsupprtedHttpMethodError,
+pub const HttpError = error{
+    UnsupprtedMethod,
 };
 
 pub const HttpRequestInfo = struct {
@@ -54,7 +54,7 @@ pub const HttpParser = struct {
                                 } else if (eql(u8, word, "GET")) {
                                     req_info.method = .HttpMethodGet;
                                 } else {
-                                    return error.UnsuportedHttpMethodError;
+                                    return error.UnsupportedMethod;
                                 }
                             },
                             // route
