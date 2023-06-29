@@ -8,6 +8,7 @@ const HttpRequestInfo = @import("http.zig").HttpRequestInfo;
 const HttpResponseInfo = @import("http.zig").HttpResponseInfo;
 const Allocator = @import("std").mem.Allocator;
 const ContentType = @import("http.zig").ContentType;
+const getDateForHttpUtc = @import("http.zig").getDateForHttpUtc;
 
 pub const Route = struct {
     path: []const u8,
@@ -91,6 +92,7 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) []const u8 {
     var response: HttpResponseInfo = undefined;
     response.status_code = 200;
     response.content.cntype = ContentType.TextHtml;
+    response.date = getDateForHttpUtc(allocator) catch "ERROR!";
     response.textual_content = text;
 
     const res_str = response.getString(allocator) catch "ERROR!\n";

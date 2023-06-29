@@ -5,8 +5,10 @@ const parseFloat = @import("std").fmt.parseFloat;
 const trim = @import("std").mem.trim;
 const isDigit = @import("std").ascii.isDigit;
 const Allocator = @import("std").mem.Allocator;
-const Timestamp = @import("time.zig");
+const Timestamp = @import("time.zig").Timestamp;
 const allocPrint = @import("std").fmt.allocPrint;
+const WeekDay = @import("time.zig").WeekDay;
+const Month = @import("time.zig").Month;
 
 /// represents an HTTP method
 pub const HttpMethod = enum {
@@ -91,6 +93,54 @@ fn statusCodeToString(status_code: u16) ![]const u8 {
     };
 }
 
+fn getShortDayName(wd: WeekDay) []const u8 {
+    return switch (wd) {
+        .Monday => "Mon",
+        .Tuesday => "Tue",
+        .Wednesday => "Wed",
+        .Thursday => "Thu",
+        .Friday => "Fri",
+        .Saturday => "Sat",
+        .Sunday => "Sun",
+    };
+}
+
+fn getShortMonthName(m: Month) []const u8 {
+    return switch (m) {
+        .January => "Jan",
+        .February => "Feb",
+        .March => "Mar",
+        .April => "Apr",
+        .May => "May",
+        .June => "Jun",
+        .July => "Jul",
+        .August => "Aug",
+        .September => "Sep",
+        .October => "Oct",
+        .November => "Nov",
+        .December => "Dec",
+    };
+}
+
+/// creates a timestamp string (RFC 9110)
+/// caller has to free the memory
+pub fn getDateForHttpUtc(allocator: Allocator) ![]const u8 {
+    const utc_now = Timestamp.now_utc();
+    return try allocPrint(
+        allocator,
+        "Date: {s}, {} {s} {} {}:{}:{} UTC",
+        .{
+            getShortDayName(utc_now.date.week_day),
+            utc_now.date.month_day,
+            getShortMonthName(utc_now.date.month),
+            utc_now.date.year,
+            utc_now.time.hour,
+            utc_now.time.minute,
+            utc_now.time.second,
+        },
+    );
+}
+
 pub const HttpRequestInfo = struct {
     method: HttpMethod,
     route: []const u8,
@@ -135,7 +185,7 @@ pub const HttpResponseInfo = struct {
     allow: []HttpMethod,
     cache_control: u32,
     connection: Connection,
-    date: Timestamp,
+    date: []const u8,
     server: []const u8 = "Zeb Web Server",
     textual_content: ?[]const u8,
 
@@ -147,7 +197,19 @@ pub const HttpResponseInfo = struct {
         self: *Self,
         allocator: Allocator,
     ) ![]const u8 {
-        const top_line = try allocPrint(
+        const headers = try allocPrint(
+            allocator,
+            "{s}\r\n{s}\r\n",
+            .{
+                // Content-Type
+                contentTypeToString(self.content.cntype),
+                // Date
+                self.date,
+            },
+        );
+        defer allocator.free(headers);
+
+        const text_res = try allocPrint(
             allocator,
             "HTTP/1.1 {} {s}\r\n" ++ "{s}\r\n" ++ "\r\n{s}",
             .{
@@ -155,12 +217,12 @@ pub const HttpResponseInfo = struct {
                 self.status_code,
                 try statusCodeToString(self.status_code),
                 // headers
-                contentTypeToString(self.content.cntype),
+                headers,
                 // body
                 self.textual_content orelse "No Content",
             },
         );
-        return top_line;
+        return text_res;
     }
 };
 
