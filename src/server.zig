@@ -66,13 +66,17 @@ pub fn Server(comptime port: u16) type {
     };
 }
 
+// demo
+
+const asset_dir = "assets";
+
 fn homeHandler(req: HttpRequestInfo) []const u8 {
     print(
         "home handler, route: {s}, method: {any}\n",
         .{ req.route, req.method },
     );
 
-    const text = "Hello world\n";
+    const text = @embedFile(asset_dir ++ "/home.html");
     return text;
 }
 
