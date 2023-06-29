@@ -4,10 +4,11 @@ const HttpParser = @import("http.zig").HttpParser;
 const eql = @import("std").mem.eql;
 const ArenaAllocator = @import("std").heap.ArenaAllocator;
 const page_allocator = @import("std").heap.page_allocator;
+const HttpRequestInfo = @import("http.zig").HttpRequestInfo;
 
 pub const Route = struct {
     path: []const u8,
-    handler: *const fn () void,
+    handler: *const fn (req: HttpRequestInfo) []const u8,
 };
 
 pub fn Server(comptime port: u16) type {
@@ -49,7 +50,8 @@ pub fn Server(comptime port: u16) type {
                     // found matching route
                     if (eql(u8, route.path, http_info.route)) {
                         // call the handler
-                        route.handler();
+                        const response = route.handler(http_info);
+                        _ = try client.send(response);
                     }
                 }
             }
@@ -64,8 +66,14 @@ pub fn Server(comptime port: u16) type {
     };
 }
 
-fn homeHandler() void {
-    print("HOME HANDLER\n", .{});
+fn homeHandler(req: HttpRequestInfo) []const u8 {
+    print(
+        "home handler, route: {s}, method: {any}\n",
+        .{ req.route, req.method },
+    );
+
+    const text = "Hello world\n";
+    return text;
 }
 
 test {
