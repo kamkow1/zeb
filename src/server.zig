@@ -5,10 +5,16 @@ const eql = @import("std").mem.eql;
 const ArenaAllocator = @import("std").heap.ArenaAllocator;
 const page_allocator = @import("std").heap.page_allocator;
 const HttpRequestInfo = @import("http.zig").HttpRequestInfo;
+const HttpResponseInfo = @import("http.zig").HttpResponseInfo;
+const Allocator = @import("std").mem.Allocator;
+const ContentType = @import("http.zig").ContentType;
 
 pub const Route = struct {
     path: []const u8,
-    handler: *const fn (req: HttpRequestInfo) []const u8,
+    handler: *const fn (
+        allocator: Allocator,
+        req: HttpRequestInfo,
+    ) []const u8,
 };
 
 pub fn Server(comptime port: u16) type {
@@ -43,14 +49,19 @@ pub fn Server(comptime port: u16) type {
 
                 var arena = ArenaAllocator.init(page_allocator);
                 defer arena.deinit();
+
                 const arenaAllocator = arena.allocator();
                 var httpParser = HttpParser.init(arenaAllocator, &buffer);
+
                 const http_info = try httpParser.parse();
+                defer arenaAllocator.free(http_info.route);
+
                 for (self.routes) |route| {
                     // found matching route
                     if (eql(u8, route.path, http_info.route)) {
                         // call the handler
-                        const response = route.handler(http_info);
+                        const response = route.handler(arenaAllocator, http_info);
+                        defer arenaAllocator.free(response);
                         _ = try client.send(response);
                     }
                 }
@@ -70,14 +81,21 @@ pub fn Server(comptime port: u16) type {
 
 const asset_dir = "assets";
 
-fn homeHandler(req: HttpRequestInfo) []const u8 {
+fn homeHandler(allocator: Allocator, req: HttpRequestInfo) []const u8 {
     print(
         "home handler, route: {s}, method: {any}\n",
         .{ req.route, req.method },
     );
 
     const text = @embedFile(asset_dir ++ "/home.html");
-    return text;
+    var response: HttpResponseInfo = undefined;
+    response.status_code = 200;
+    response.content.cntype = ContentType.TextHtml;
+    response.textual_content = text;
+
+    const res_str = response.getString(allocator) catch "ERROR!\n";
+    print("response:\n{s}\n", .{res_str});
+    return res_str;
 }
 
 test {
