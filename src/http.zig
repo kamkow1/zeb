@@ -1,14 +1,15 @@
-const print = @import("std").debug.print;
-const tokenize = @import("std").mem.tokenize;
 const eql = @import("std").mem.eql;
-const parseFloat = @import("std").fmt.parseFloat;
-const trim = @import("std").mem.trim;
-const isDigit = @import("std").ascii.isDigit;
 const Allocator = @import("std").mem.Allocator;
 const Timestamp = @import("time.zig").Timestamp;
 const allocPrint = @import("std").fmt.allocPrint;
 const WeekDay = @import("time.zig").WeekDay;
 const Month = @import("time.zig").Month;
+const split = @import("std").mem.split;
+const endsWith = @import("std").mem.endsWith;
+const StringHashMap = @import("std").hash_map.StringHashMap;
+const trimLeft = @import("std").mem.trimLeft;
+const set = @import("std").mem.set;
+const isASCII = @import("std").ascii.isASCII;
 
 /// represents an HTTP method
 pub const HttpMethod = enum {
@@ -144,7 +145,9 @@ pub fn getDateForHttpUtc(allocator: Allocator) ![]const u8 {
 pub const HttpRequestInfo = struct {
     method: HttpMethod,
     route: []const u8,
-    http_version: f32,
+    http_version: []const u8,
+    headers: StringHashMap([]const u8),
+    body: []u8,
 };
 
 pub const HttpResponseInfo = struct {
@@ -239,49 +242,59 @@ pub const HttpParser = struct {
         };
     }
 
-    pub fn parse(self: *Self) !HttpRequestInfo {
+    /// parses the HTTP request
+    /// caller has to free: HttpRequestInfo.route, HttpRequestInfo.body
+    /// caller has to deinit: HttpRequestInfo.headers
+    pub fn parse_revamped(self: *Self) !HttpRequestInfo {
         var req_info: HttpRequestInfo = undefined;
+        var lines = split(u8, self.text, "\r\n");
 
+        // process the top entry
+        const top_entry = lines.next().?;
+        var words = split(u8, top_entry, " ");
+        const method = words.next().?;
+        const route = words.next().?;
+        const version = words.next().?;
+
+        if (eql(u8, method, "POST")) {
+            req_info.method = .HttpMethodPost;
+        } else if (eql(u8, method, "GET")) {
+            req_info.method = .HttpMethodGet;
+        } else {
+            return error.UnsupportedMethod;
+        }
+
+        req_info.route = try self.allocator.dupe(u8, route);
+        req_info.http_version = version;
+
+        // process the request
+        var end_of_headers = false;
+        req_info.headers = StringHashMap([]const u8).init(self.allocator);
+        req_info.body = try self.allocator.alloc(u8, 2048);
+        set(u8, req_info.body, 0);
         var i: usize = 0;
-        var lineno: usize = 0;
-        var line: [1024]u8 = undefined;
-        for (self.text) |char| {
-            if (char == '\r') {
-                if (lineno == 0) {
-                    var it = tokenize(u8, &line, " ");
-                    var count: usize = 0;
-                    while (it.next()) |word| {
-                        switch (count) {
-                            // HTTP method
-                            0 => {
-                                if (eql(u8, word, "POST")) {
-                                    req_info.method = .HttpMethodPost;
-                                } else if (eql(u8, word, "GET")) {
-                                    req_info.method = .HttpMethodGet;
-                                } else {
-                                    return error.UnsupportedMethod;
-                                }
-                            },
-                            // route
-                            1 => {
-                                req_info.route = try self.allocator.dupe(u8, word);
-                            },
-                            // TODO: HTTP version
-                            else => {},
-                        }
-
-                        count += 1;
-                    }
-                }
-
-                @memset(&line, 0, @sizeOf(@TypeOf(line)));
-                i += 1;
-                lineno += 1;
-                continue;
+        while (lines.next()) |line| {
+            if (line.len == 0 and !end_of_headers) {
+                end_of_headers = true;
             }
 
-            line[i] = char;
-            i += 1;
+            if (!end_of_headers) {
+                // header line
+                var data = split(u8, line, ":");
+                const key = data.next().?;
+                var value = data.next().?;
+                value = trimLeft(u8, value, " ");
+                try req_info.headers.put(key, value);
+            } else {
+                // body
+                for (line) |char| {
+                    // avoid problematic non-ascii chars
+                    if (isASCII(char)) {
+                        req_info.body[i] = char;
+                        i += 1;
+                    }
+                }
+            }
         }
 
         return req_info;

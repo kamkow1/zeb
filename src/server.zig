@@ -9,13 +9,15 @@ const HttpResponseInfo = @import("http.zig").HttpResponseInfo;
 const Allocator = @import("std").mem.Allocator;
 const ContentType = @import("http.zig").ContentType;
 const getDateForHttpUtc = @import("http.zig").getDateForHttpUtc;
+const json = @import("std").json;
+const trim = @import("std").mem.trim;
 
 pub const Route = struct {
     path: []const u8,
     handler: *const fn (
         allocator: Allocator,
         req: HttpRequestInfo,
-    ) []const u8,
+    ) anyerror![]const u8,
 };
 
 pub fn Server(comptime port: u16) type {
@@ -54,14 +56,16 @@ pub fn Server(comptime port: u16) type {
                 const arenaAllocator = arena.allocator();
                 var httpParser = HttpParser.init(arenaAllocator, &buffer);
 
-                const http_info = try httpParser.parse();
+                var http_info = try httpParser.parse_revamped();
+                defer http_info.headers.deinit();
                 defer arenaAllocator.free(http_info.route);
+                defer arenaAllocator.free(http_info.body);
 
                 for (self.routes) |route| {
                     // found matching route
                     if (eql(u8, route.path, http_info.route)) {
                         // call the handler
-                        const response = route.handler(arenaAllocator, http_info);
+                        const response = try route.handler(arenaAllocator, http_info);
                         defer arenaAllocator.free(response);
                         _ = try client.send(response);
                     }
@@ -82,7 +86,11 @@ pub fn Server(comptime port: u16) type {
 
 const asset_dir = "assets";
 
-fn homeHandler(allocator: Allocator, req: HttpRequestInfo) []const u8 {
+fn homeHandler(allocator: Allocator, req: HttpRequestInfo) ![]const u8 {
+    const UserInfo = struct {
+        name: []const u8,
+    };
+
     print(
         "home handler, route: {s}, method: {any}\n",
         .{ req.route, req.method },
@@ -92,11 +100,23 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) []const u8 {
     var response: HttpResponseInfo = undefined;
     response.status_code = 200;
     response.content.cntype = ContentType.TextHtml;
-    response.date = getDateForHttpUtc(allocator) catch "ERROR!";
+    response.date = try getDateForHttpUtc(allocator);
     response.textual_content = text;
+    const res_str = try response.getString(allocator);
 
-    const res_str = response.getString(allocator) catch "ERROR!\n";
-    print("response:\n{s}\n", .{res_str});
+    var name: []const u8 = "User";
+
+    if (eql(u8, req.headers.get("Content-Type").?, "application/json")) {
+        const body = trim(u8, req.body, &[_]u8{0});
+        var stream = json.TokenStream.init(body);
+        const obj = try json.parse(
+            UserInfo,
+            &stream,
+            .{ .allocator = allocator },
+        );
+        name = obj.name;
+    }
+    print("Name: {s}\n", .{name});
     return res_str;
 }
 
@@ -104,7 +124,6 @@ test {
     var routes = [_]Route{
         .{ .path = "/home", .handler = homeHandler },
     };
-
     var server = Server(8000).init(&routes);
     try server.start();
 }
