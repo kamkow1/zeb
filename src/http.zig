@@ -148,6 +148,15 @@ pub const HttpRequestInfo = struct {
     http_version: []const u8,
     headers: StringHashMap([]const u8),
     body: []u8,
+    allocator: Allocator,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.headers.deinit();
+        self.allocator.free(self.route);
+        self.allocator.free(self.body);
+    }
 };
 
 pub const HttpResponseInfo = struct {
@@ -247,6 +256,8 @@ pub const HttpParser = struct {
     /// caller has to deinit: HttpRequestInfo.headers
     pub fn parse(self: *Self) !HttpRequestInfo {
         var req_info: HttpRequestInfo = undefined;
+        // set the allocator for later self-cleanup
+        req_info.allocator = self.allocator;
         var lines = split(u8, self.text, "\r\n");
 
         // process the top entry
