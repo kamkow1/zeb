@@ -245,7 +245,7 @@ pub const HttpParser = struct {
     /// parses the HTTP request
     /// caller has to free: HttpRequestInfo.route, HttpRequestInfo.body
     /// caller has to deinit: HttpRequestInfo.headers
-    pub fn parse_revamped(self: *Self) !HttpRequestInfo {
+    pub fn parse(self: *Self) !HttpRequestInfo {
         var req_info: HttpRequestInfo = undefined;
         var lines = split(u8, self.text, "\r\n");
 

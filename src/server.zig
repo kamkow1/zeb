@@ -56,7 +56,7 @@ pub fn Server(comptime port: u16) type {
                 const arenaAllocator = arena.allocator();
                 var httpParser = HttpParser.init(arenaAllocator, &buffer);
 
-                var http_info = try httpParser.parse_revamped();
+                var http_info = try httpParser.parse();
                 defer http_info.headers.deinit();
                 defer arenaAllocator.free(http_info.route);
                 defer arenaAllocator.free(http_info.body);
