@@ -11,13 +11,14 @@ const ContentType = @import("http.zig").ContentType;
 const getDateForHttpUtc = @import("http.zig").getDateForHttpUtc;
 const json = @import("std").json;
 const trim = @import("std").mem.trim;
+const HttpString = @import("http.zig").HttpString;
 
 pub const Route = struct {
     path: []const u8,
     handler: *const fn (
         allocator: Allocator,
         req: HttpRequestInfo,
-    ) anyerror![]const u8,
+    ) anyerror!HttpString,
 };
 
 pub fn Server(comptime port: u16) type {
@@ -63,9 +64,9 @@ pub fn Server(comptime port: u16) type {
                     // found matching route
                     if (eql(u8, route.path, http_info.route)) {
                         // call the handler
-                        const response = try route.handler(arenaAllocator, http_info);
-                        defer arenaAllocator.free(response);
-                        _ = try client.send(response);
+                        var response = try route.handler(arenaAllocator, http_info);
+                        defer response.deinit();
+                        _ = try client.send(response.string);
                     }
                 }
             }
@@ -84,7 +85,7 @@ pub fn Server(comptime port: u16) type {
 
 const asset_dir = "assets";
 
-fn homeHandler(allocator: Allocator, req: HttpRequestInfo) ![]const u8 {
+fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
     const UserInfo = struct {
         name: []const u8,
     };

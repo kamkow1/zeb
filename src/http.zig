@@ -159,6 +159,17 @@ pub const HttpRequestInfo = struct {
     }
 };
 
+pub const HttpString = struct {
+    string: []const u8,
+    allocator: Allocator,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.allocator.free(self.string);
+    }
+};
+
 pub const HttpResponseInfo = struct {
     pub const Content = struct {
         cntype: ContentType,
@@ -208,7 +219,7 @@ pub const HttpResponseInfo = struct {
     pub fn getString(
         self: *Self,
         allocator: Allocator,
-    ) ![]const u8 {
+    ) !HttpString {
         const headers = try allocPrint(
             allocator,
             "{s}\r\n{s}\r\n",
@@ -234,7 +245,10 @@ pub const HttpResponseInfo = struct {
                 self.textual_content orelse "No Content",
             },
         );
-        return text_res;
+        return .{
+            .string = text_res,
+            .allocator = allocator,
+        };
     }
 };
 
