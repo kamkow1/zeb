@@ -13,6 +13,7 @@ const json = @import("std").json;
 const trim = @import("std").mem.trim;
 const HttpString = @import("http.zig").HttpString;
 const split = @import("std").mem.split;
+const trimZerosFromString = @import("utils.zig").trimZerosFromString;
 
 pub const Route = struct {
     path: []const u8,
@@ -109,24 +110,27 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
 
     var name: []const u8 = "User";
     // TODO: Add support for more HTTP methods
-    if (req.method == .HttpMethodPost) {
-        // check that json is sent
-        // TODO: test XML
-        const contentType = req.headers.get("Content-Type") orelse "";
-        if (eql(u8, contentType, "application/json")) {
-            const body = trim(u8, req.body, &[_]u8{0});
-            var stream = json.TokenStream.init(body);
-            const obj = try json.parse(
-                UserInfo,
-                &stream,
-                .{ .allocator = allocator },
-            );
-            name = obj.name;
-        }
-    } else if (req.method == .HttpMethodGet) {
-        if (req.route_args.get("name")) |name_arg| {
-            name = name_arg;
-        }
+    switch (req.method) {
+        .HttpMethodGet => {
+            if (req.route_args.get("name")) |name_arg| {
+                name = name_arg;
+            }
+        },
+        .HttpMethodPost => {
+            // check that json is sent
+            // TODO: test XML
+            const contentType = req.headers.get("Content-Type") orelse "";
+            if (eql(u8, contentType, "application/json")) {
+                const body = trimZerosFromString(req.body);
+                var stream = json.TokenStream.init(body);
+                const obj = try json.parse(
+                    UserInfo,
+                    &stream,
+                    .{ .allocator = allocator },
+                );
+                name = obj.name;
+            }
+        },
     }
 
     print("Name: {s}\n", .{name});
