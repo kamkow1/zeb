@@ -147,6 +147,7 @@ pub const HttpRequestInfo = struct {
     route: []const u8,
     http_version: []const u8,
     headers: StringHashMap([]const u8),
+    route_args: StringHashMap([]const u8),
     body: []u8,
     allocator: Allocator,
 
@@ -291,6 +292,21 @@ pub const HttpParser = struct {
 
         req_info.route = try self.allocator.dupe(u8, route);
         req_info.http_version = version;
+
+        // process the route args
+        req_info.route_args = StringHashMap([]const u8).init(self.allocator);
+        var route_iter = split(u8, req_info.route, "?");
+        _ = route_iter.next().?; // .? is safe, because the route must exist
+        // this isn't obvious, because a route can exist w/o args
+        if (route_iter.next()) |args_section| {
+            var arg_pairs = split(u8, args_section, "&");
+            while (arg_pairs.next()) |arg_pair| {
+                var components = split(u8, arg_pair, "=");
+                const key = components.next().?;
+                const value = components.next() orelse "";
+                try req_info.route_args.put(key, value);
+            }
+        }
 
         // process the request
         var end_of_headers = false;
