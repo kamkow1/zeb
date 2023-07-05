@@ -2,7 +2,6 @@ const network = @import("network");
 const print = @import("std").debug.print;
 const HttpParser = @import("http.zig").HttpParser;
 const eql = @import("std").mem.eql;
-const ArenaAllocator = @import("std").heap.ArenaAllocator;
 const page_allocator = @import("std").heap.page_allocator;
 const HttpRequestInfo = @import("http.zig").HttpRequestInfo;
 const HttpResponseInfo = @import("http.zig").HttpResponseInfo;
@@ -27,70 +26,74 @@ pub const Route = struct {
     ) anyerror!HttpString,
 };
 
-pub fn Server(comptime port: u16) type {
-    return struct {
-        socket: ?network.Socket,
+const Server = struct {
+    socket: ?network.Socket,
+    routes: []Route,
+    port: u16,
+    allocator: Allocator,
+
+    const Self = @This();
+
+    pub fn init(
+        allocator: Allocator,
+        port: u16,
         routes: []Route,
+    ) Self {
+        return Self{
+            .socket = null,
+            .routes = routes,
+            .port = port,
+            .allocator = allocator,
+        };
+    }
 
-        const Self = @This();
+    fn closeServer(self: *Self) void {
+        self.socket.?.close();
+        network.deinit();
+    }
 
-        fn closeServer(self: *Self) void {
-            self.socket.?.close();
-            network.deinit();
-        }
+    pub fn start(self: *Self) !void {
+        try network.init();
+        defer network.deinit();
 
-        pub fn start(self: *Self) !void {
-            try network.init();
-            defer network.deinit();
+        self.socket = try network.Socket.create(.ipv4, .tcp);
+        defer self.socket.?.close();
+        try self.socket.?.bindToPort(self.port);
 
-            self.socket = try network.Socket.create(.ipv4, .tcp);
-            defer self.socket.?.close();
-            try self.socket.?.bindToPort(port);
+        try self.socket.?.listen();
+        while (true) {
+            var client = try self.socket.?.accept();
+            defer client.close();
+            const endpoint = try client.getLocalEndPoint();
+            print("Client connected from {d}\n", .{endpoint});
 
-            try self.socket.?.listen();
-            while (true) {
-                var client = try self.socket.?.accept();
-                defer client.close();
-                const endpoint = try client.getLocalEndPoint();
-                print("Client connected from {d}\n", .{endpoint});
+            var buffer: [1024]u8 = undefined;
+            _ = try client.receive(&buffer);
 
-                var buffer: [1024]u8 = undefined;
-                _ = try client.receive(&buffer);
+            var httpParser = HttpParser.init(self.allocator, &buffer);
+            var http_info = try httpParser.parse();
+            defer http_info.deinit();
 
-                var arena = ArenaAllocator.init(page_allocator);
-                defer arena.deinit();
-
-                const arenaAllocator = arena.allocator();
-                var httpParser = HttpParser.init(arenaAllocator, &buffer);
-
-                var http_info = try httpParser.parse();
-                defer http_info.deinit();
-
-                for (self.routes) |route| {
-                    // found matching route
-                    var route_iter = split(u8, http_info.route, "?");
-                    const route_wo_args = route_iter.next().?;
-                    if (eql(u8, route_wo_args, route.path)) {
-                        // call the handler
-                        var response = try route.handler(arenaAllocator, http_info);
-                        defer response.deinit();
-                        _ = try client.send(response.string);
-                    }
+            for (self.routes) |route| {
+                // found matching route
+                var route_iter = split(u8, http_info.route, "?");
+                const route_wo_args = route_iter.next().?;
+                if (eql(u8, route_wo_args, route.path)) {
+                    // call the handler
+                    var response = try route.handler(self.allocator, http_info);
+                    defer response.deinit();
+                    _ = try client.send(response.string);
                 }
             }
         }
-
-        pub fn init(routes: []Route) Self {
-            return Self{
-                .socket = null,
-                .routes = routes,
-            };
-        }
-    };
-}
+    }
+};
 
 // demo
-fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
+fn homeHandler(
+    allocator: Allocator,
+    req: HttpRequestInfo,
+) !HttpString {
     const IncomingRequest = struct {
         name: []const u8,
         message: []const u8,
@@ -158,6 +161,10 @@ test {
             .handler = homeHandler,
         },
     };
-    var server = Server(8000).init(&routes);
+    var server = Server.init(
+        testing.allocator,
+        8000,
+        &routes,
+    );
     try server.start();
 }
