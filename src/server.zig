@@ -14,6 +14,8 @@ const trim = @import("std").mem.trim;
 const HttpString = @import("http.zig").HttpString;
 const split = @import("std").mem.split;
 const trimZerosFromString = @import("utils.zig").trimZerosFromString;
+const Page = @import("template.zig").Page;
+const StringHashMap = @import("std").hash_map.StringHashMap;
 
 pub const Route = struct {
     path: []const u8,
@@ -87,9 +89,6 @@ pub fn Server(comptime port: u16) type {
 }
 
 // demo
-
-const asset_dir = "assets";
-
 fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
     const UserInfo = struct {
         name: []const u8,
@@ -99,14 +98,6 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
         "home handler, route: {s}, method: {any}\n",
         .{ req.route, req.method },
     );
-
-    const text = @embedFile(asset_dir ++ "/home.html");
-    var response: HttpResponseInfo = undefined;
-    response.status_code = 200;
-    response.content.cntype = ContentType.TextHtml;
-    response.date = try getDateForHttpUtc(allocator);
-    response.textual_content = text;
-    const res_str = try response.getString(allocator);
 
     var name: []const u8 = "User";
     // TODO: Add support for more HTTP methods
@@ -133,7 +124,19 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
         },
     }
 
-    print("Name: {s}\n", .{name});
+    var args = StringHashMap([]const u8).init(allocator);
+    try args.put("name", name);
+    defer args.deinit();
+    var page = try Page.init(allocator, "src/assets/home.html", args);
+    defer page.deinit();
+
+    var response: HttpResponseInfo = undefined;
+    response.status_code = 200;
+    response.content.cntype = ContentType.TextHtml;
+    response.date = try getDateForHttpUtc(allocator);
+    response.textual_content = try page.generate();
+    const res_str = try response.getString(allocator);
+
     return res_str;
 }
 
