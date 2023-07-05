@@ -90,3 +90,6 @@ test {
 - [x] Implement body parameters
 - [x] Implement route parameters
 - [ ] Create a simple templating engine
+    * [x] Variable interpolation
+    * [ ] If confitions
+    * [ ] Loops
