@@ -7,11 +7,16 @@ const trimZerosFromString = @import("utils.zig").trimZerosFromString;
 const replace = @import("std").mem.replace;
 const allocPrint = @import("std").fmt.allocPrint;
 const replacementSize = @import("std").mem.replacementSize;
+const isAlNum = @import("std").ascii.isAlNum;
+const isSpace = @import("std").ascii.isSpace;
+const isDigit = @import("std").ascii.isDigit;
+const ArrayList = @import("std").ArrayList;
 
 pub const TemplateArguments = StringHashMap([]const u8);
 
 pub const MakePageError = error{
     UnknownVariableName,
+    UnknownTemplateToken,
 };
 
 pub const Page = struct {
@@ -21,6 +26,19 @@ pub const Page = struct {
     arguments: TemplateArguments,
 
     const Self = @This();
+
+    const TokenType = enum {
+        OpenParen,
+        CloseParen,
+        Variable,
+        Eql,
+        Number,
+    };
+
+    const Token = struct {
+        toktype: TokenType,
+        text: []const u8,
+    };
 
     pub fn init(
         allocator: Allocator,
@@ -41,9 +59,11 @@ pub const Page = struct {
         self.allocator.free(self.outbuf);
     }
 
+    /// generates a Zeb HTML page with dynamic information
+    /// syntax:
+    /// - variable interpolation: `${some_var_name}`
+    /// - blocks: `##block_type (arguments...)`
     pub fn generate(self: *Self) ![]const u8 {
-        // var outbuf allocator.alloc();
-
         var lines = split(u8, self.data, "\n");
         while (lines.next()) |line| {
             var i: usize = 0;
@@ -74,8 +94,98 @@ pub const Page = struct {
                             _ = replace(u8, self.outbuf, search, value, tmpbuf);
                             self.allocator.free(self.outbuf);
                             self.outbuf = tmpbuf;
-                        } else {
-                            return error.UnknownVariableName;
+                        } else return error.UnknownVariableName;
+                    }
+
+                    // block
+                    if (char == '#' and line[i + 1] == '#') {
+                        i += 2; // skip `##`
+                        var block_type_name: [16]u8 = undefined;
+                        var k: usize = 0;
+                        while (isAlNum(line[i])) {
+                            block_type_name[k] = line[i];
+                            k += 1;
+                            i += 1;
+                        }
+
+                        while (isSpace(line[i])) {
+                            i += 1;
+                        }
+                        var tokens = ArrayList(Token).init(self.allocator);
+                        defer tokens.deinit();
+                        while (i < line.len) {
+                            switch (line[i]) {
+                                '(' => {
+                                    try tokens.append(.{
+                                        .toktype = .OpenParen,
+                                        .text = "(",
+                                    });
+                                    i += 1;
+                                    continue;
+                                },
+                                ')' => {
+                                    try tokens.append(.{
+                                        .toktype = .CloseParen,
+                                        .text = ")",
+                                    });
+                                    i += 1;
+                                    continue;
+                                },
+                                '$' => {
+                                    i += 1;
+                                    var var_name_buf: [32]u8 = undefined;
+                                    var l: usize = 0;
+                                    @memset(&var_name_buf, 0, @sizeOf(@TypeOf(var_name_buf)));
+                                    while (isAlNum(line[i])) {
+                                        var_name_buf[l] = line[i];
+                                        l += 1;
+                                        i += 1;
+                                    }
+                                    var clean_var_name = trimZerosFromString(&var_name_buf);
+                                    print("{s}\n", .{clean_var_name});
+                                    try tokens.append(.{
+                                        .toktype = .Variable,
+                                        .text = clean_var_name,
+                                    });
+                                    continue;
+                                },
+                                '=' => {
+                                    try tokens.append(.{
+                                        .toktype = .Eql,
+                                        .text = "=",
+                                    });
+                                    i += 1;
+                                    continue;
+                                },
+                                // else => return error.UnknownTemplateToken,
+                                else => {
+                                    // TODO: handle floating point numbers
+                                    // TODO: handle string literals
+
+                                    if (isDigit(line[i])) {
+                                        // max unsigned 32 bit integer has 10 digits
+                                        var numbuf: [10]u8 = undefined;
+                                        @memset(&numbuf, 0, @sizeOf(@TypeOf(numbuf)));
+                                        var h: usize = 0;
+                                        while (isDigit(line[i])) {
+                                            numbuf[h] = line[i];
+                                            h += 1;
+                                            i += 1;
+                                        }
+                                        var clean_numbuf = trimZerosFromString(&numbuf);
+                                        try tokens.append(.{
+                                            .toktype = .Number,
+                                            .text = clean_numbuf,
+                                        });
+                                        continue;
+                                    }
+                                    i += 1;
+                                    continue;
+                                },
+                            }
+                        }
+                        for (tokens.items) |token| {
+                            print("token: {any}\n", .{token});
                         }
                     }
                 }

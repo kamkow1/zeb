@@ -7,5 +7,8 @@
 	<h1>Hello ${name}!!</h1>
 	<p>Welcome to Zeb, ${name}</p>
 	<p>Your message is ${message}</p>
+##if ($happy = 1)
+	<h3>I am happy</h3>
+##endif()
 </body>
 </html>
