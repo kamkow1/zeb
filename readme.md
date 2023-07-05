@@ -91,5 +91,5 @@ test {
 - [x] Implement route parameters
 - [ ] Create a simple templating engine
     * [x] Variable interpolation
-    * [ ] If confitions
+    * [ ] If conditions
     * [ ] Loops
