@@ -90,7 +90,6 @@ pub const Page = struct {
                             print("{s} => {s}\n", .{ search, value });
                             const size = replacementSize(u8, self.outbuf, search, value);
                             var tmpbuf = try self.allocator.alloc(u8, size);
-                            //self.outbuf = try self.allocator.realloc(self.outbuf, size + 1);
                             _ = replace(u8, self.outbuf, search, value, tmpbuf);
                             self.allocator.free(self.outbuf);
                             self.outbuf = tmpbuf;
