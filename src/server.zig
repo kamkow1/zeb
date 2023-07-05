@@ -16,6 +16,7 @@ const split = @import("std").mem.split;
 const trimZerosFromString = @import("utils.zig").trimZerosFromString;
 const Page = @import("template.zig").Page;
 const StringHashMap = @import("std").hash_map.StringHashMap;
+const testing = @import("std").testing;
 
 pub const Route = struct {
     path: []const u8,
@@ -90,8 +91,9 @@ pub fn Server(comptime port: u16) type {
 
 // demo
 fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
-    const UserInfo = struct {
+    const IncomingRequest = struct {
         name: []const u8,
+        message: []const u8,
     };
 
     print(
@@ -100,11 +102,15 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
     );
 
     var name: []const u8 = "User";
+    var message: []const u8 = "No Message";
     // TODO: Add support for more HTTP methods
     switch (req.method) {
         .HttpMethodGet => {
             if (req.route_args.get("name")) |name_arg| {
                 name = name_arg;
+            }
+            if (req.route_args.get("message")) |message_arg| {
+                message = message_arg;
             }
         },
         .HttpMethodPost => {
@@ -115,19 +121,21 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
                 const body = trimZerosFromString(req.body);
                 var stream = json.TokenStream.init(body);
                 const obj = try json.parse(
-                    UserInfo,
+                    IncomingRequest,
                     &stream,
                     .{ .allocator = allocator },
                 );
                 name = obj.name;
+                message = obj.message;
             }
         },
     }
 
     var args = StringHashMap([]const u8).init(allocator);
     try args.put("name", name);
+    try args.put("message", message);
     defer args.deinit();
-    var page = try Page.init(allocator, "src/assets/home.html", args);
+    var page = try Page.init(allocator, "src/assets/home.zebhtml", args);
     defer page.deinit();
 
     var response: HttpResponseInfo = undefined;
@@ -142,10 +150,11 @@ fn homeHandler(allocator: Allocator, req: HttpRequestInfo) !HttpString {
 
 test {
     var arg_name = "name";
+    var arg_message = "message";
     var routes = [_]Route{
         .{
             .path = "/home",
-            .args = &[_][]const u8{arg_name},
+            .args = &[_][]const u8{ arg_name, arg_message },
             .handler = homeHandler,
         },
     };
